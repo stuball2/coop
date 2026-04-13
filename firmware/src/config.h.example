@@ -1,0 +1,55 @@
+#pragma once
+
+// Copy this file to config.h and fill in your values.
+// config.h is gitignored — never commit it.
+
+// ─── WiFi ───────────────────────────────────────────────────────────────────────
+#define WIFI_SSID     "your_wifi_ssid"
+#define WIFI_PASSWORD "your_wifi_password"
+
+// ─── Railway API ────────────────────────────────────────────────────────────────
+// No trailing slash
+#define RAILWAY_BASE_URL "https://your-app.up.railway.app"
+#define API_KEY          "your-esp32-api-key"
+
+// ─── Location (Crowthorne, UK) ──────────────────────────────────────────────────
+#define LATITUDE   51.3644f
+#define LONGITUDE  -0.8f
+
+// ─── Motor pins (L298N) ─────────────────────────────────────────────────────────
+// IN1/IN2 control direction. EN enables the bridge.
+// Wiring:  OPEN = IN1 HIGH / IN2 LOW
+//          CLOSE = IN1 LOW  / IN2 HIGH
+#define MOTOR_IN1  26
+#define MOTOR_IN2  27
+#define MOTOR_EN   14
+
+// ─── Current sensor (ACS712 5A) ─────────────────────────────────────────────────
+// ACS712 OUT must go through a 10kΩ / 20kΩ voltage divider before the ESP32 ADC
+// pin (ACS712 swings to 5V; ESP32 ADC max is 3.3V).
+// Use an input-only pin (GPIO 34/35/36/39) — these have no internal pull-ups.
+#define CURRENT_PIN 34
+
+// Calibration — adjust these after running with the motor on the bench:
+//   Zero reading: ADC value when motor is stopped and no current flows.
+//     Measure with Serial.println(analogRead(CURRENT_PIN)) at rest.
+//   Counts per amp: (ADC range / voltage range) * (mV/A sensitivity / divider ratio)
+//     ACS712 5A sensitivity = 185 mV/A
+//     Divider ratio = 20k/(10k+20k) = 0.667
+//     ESP32 ADC: 4096 counts / 3.3 V
+//     counts/A = (4096/3300) * (185 * 0.667) = 153
+#define ACS712_ZERO_ADC       1800   // ADC reading at 0 A — calibrate on bench
+#define ACS712_COUNTS_PER_A    153   // ADC counts per amp — from the formula above
+
+// ─── Timing ─────────────────────────────────────────────────────────────────────
+#define POLL_INTERVAL_MS       300000UL  // How often to check Railway (5 min)
+#define MAX_RUN_DURATION_MS     15000UL  // Hard timeout — kill motor after this
+#define STALL_THRESHOLD_MA       1200    // Current above this = end-stop stall
+#define STALL_CONFIRM_MS          150    // Must stay above threshold for this long
+#define CURRENT_SAMPLE_MS          50    // Sample interval during motor run
+#define TRIGGER_WINDOW_SECS       360    // ±6 min window around scheduled time
+#define WIFI_CONNECT_TIMEOUT_MS  15000UL // Give up connecting after this
+#define NTP_SYNC_INTERVAL_MS  86400000UL // Re-sync NTP once per day
+
+// ─── Firmware version ───────────────────────────────────────────────────────────
+#define FIRMWARE_VERSION "1.0.0"

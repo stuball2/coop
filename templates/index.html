@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Coop Door</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #f5f5f0;
+      color: #1a1a1a;
+      padding: 1.5rem;
+      max-width: 720px;
+      margin: 0 auto;
+    }
+    h1 { font-size: 1.4rem; font-weight: 600; margin-bottom: 1.5rem; }
+    h2 { font-size: 0.85rem; font-weight: 600; text-transform: uppercase;
+         letter-spacing: 0.05em; color: #666; margin-bottom: 0.75rem; }
+
+    .card {
+      background: #fff;
+      border-radius: 8px;
+      padding: 1.25rem;
+      margin-bottom: 1rem;
+      border: 1px solid #e8e8e4;
+    }
+
+    /* Status */
+    .state-badge {
+      display: inline-block;
+      padding: 0.35rem 0.9rem;
+      border-radius: 4px;
+      font-weight: 700;
+      font-size: 1rem;
+      letter-spacing: 0.05em;
+    }
+    .state-open    { background: #d4edda; color: #155724; }
+    .state-closed  { background: #e2e3e5; color: #383d41; }
+    .state-unknown { background: #fff3cd; color: #856404; }
+
+    .meta { font-size: 0.8rem; color: #888; margin-top: 0.5rem; }
+
+    .pending-notice {
+      margin-top: 0.75rem;
+      padding: 0.5rem 0.75rem;
+      background: #fff3cd;
+      border-radius: 4px;
+      font-size: 0.85rem;
+      color: #664d03;
+    }
+
+    /* Schedule */
+    .schedule-row {
+      display: flex;
+      gap: 2rem;
+    }
+    .schedule-item { flex: 1; }
+    .schedule-item .label { font-size: 0.75rem; color: #888; margin-bottom: 0.2rem; }
+    .schedule-item .time { font-size: 1.5rem; font-weight: 300; }
+
+    /* Override form */
+    .override-form { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: flex-end; }
+    .override-form input[type="password"] {
+      flex: 1;
+      min-width: 160px;
+      padding: 0.5rem 0.75rem;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 0.9rem;
+    }
+    .btn {
+      padding: 0.5rem 1.25rem;
+      border: none;
+      border-radius: 4px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-open  { background: #198754; color: #fff; }
+    .btn-close { background: #6c757d; color: #fff; }
+    .btn:hover { filter: brightness(0.9); }
+
+    /* Flashed messages */
+    .flashes { list-style: none; margin-bottom: 1rem; }
+    .flashes li {
+      padding: 0.6rem 0.9rem;
+      background: #cfe2ff;
+      border-radius: 4px;
+      margin-bottom: 0.4rem;
+      font-size: 0.875rem;
+      color: #084298;
+    }
+
+    /* Event log */
+    table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+    th {
+      text-align: left;
+      padding: 0.5rem 0.6rem;
+      border-bottom: 2px solid #e8e8e4;
+      font-weight: 600;
+      color: #555;
+    }
+    td {
+      padding: 0.45rem 0.6rem;
+      border-bottom: 1px solid #f0f0ec;
+      color: #333;
+    }
+    tr:last-child td { border-bottom: none; }
+    .tag {
+      display: inline-block;
+      padding: 0.1rem 0.45rem;
+      border-radius: 3px;
+      font-size: 0.72rem;
+      font-weight: 600;
+    }
+    .tag-open    { background: #d4edda; color: #155724; }
+    .tag-close   { background: #e2e3e5; color: #383d41; }
+    .tag-stall   { background: #f8d7da; color: #721c24; }
+    .tag-manual   { background: #cff4fc; color: #055160; }
+    .tag-schedule { background: #e2e3e5; color: #383d41; }
+    .no-events { color: #999; font-style: italic; padding: 1rem 0; font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+
+<h1>🐔 Coop Door</h1>
+
+{% with messages = get_flashed_messages() %}
+  {% if messages %}
+    <ul class="flashes">
+      {% for msg in messages %}<li>{{ msg }}</li>{% endfor %}
+    </ul>
+  {% endif %}
+{% endwith %}
+
+<!-- Status -->
+<div class="card">
+  <h2>Status</h2>
+  <span class="state-badge state-{{ door_state }}">{{ door_state | upper }}</span>
+
+  {% if pending %}
+    <div class="pending-notice">
+      Pending command: <strong>{{ pending.action | upper }}</strong>
+      — queued {{ pending.issued_at | local_dt }}, expires {{ pending.expires_at | local_dt }}
+    </div>
+  {% endif %}
+
+  {% if last_event %}
+    <p class="meta">Last telemetry: {{ last_event.timestamp | local_dt }}</p>
+  {% else %}
+    <p class="meta">No telemetry received yet.</p>
+  {% endif %}
+</div>
+
+<!-- Schedule -->
+<div class="card">
+  <h2>Today's schedule</h2>
+  <div class="schedule-row">
+    <div class="schedule-item">
+      <div class="label">Open (sunrise)</div>
+      <div class="time">{{ open_at | local_time }}</div>
+    </div>
+    <div class="schedule-item">
+      <div class="label">Close (sunset)</div>
+      <div class="time">{{ close_at | local_time }}</div>
+    </div>
+  </div>
+</div>
+
+<!-- Manual override -->
+<div class="card">
+  <h2>Manual override</h2>
+  <form class="override-form" method="post" action="/api/command">
+    <input type="password" name="admin_password" placeholder="Admin password" required autocomplete="current-password">
+    <button class="btn btn-open"  type="submit" name="action" value="open">Open</button>
+    <button class="btn btn-close" type="submit" name="action" value="close">Close</button>
+  </form>
+</div>
+
+<!-- Event log -->
+<div class="card">
+  <h2>Recent events</h2>
+  {% if events %}
+    <table>
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>Action</th>
+          <th>Trigger</th>
+          <th>Duration</th>
+          <th>Peak mA</th>
+          <th>Stall</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in events %}
+        <tr>
+          <td>{{ e.timestamp | local_dt }}</td>
+          <td><span class="tag tag-{{ e.action }}">{{ e.action | upper }}</span></td>
+          <td>
+            {% if e.trigger == 'manual' %}
+              <span class="tag tag-manual">manual</span>
+            {% elif e.trigger == 'schedule' %}
+              <span class="tag tag-schedule">schedule</span>
+            {% else %}
+              {{ e.trigger }}
+            {% endif %}
+          </td>
+          <td>{% if e.run_duration_ms %}{{ e.run_duration_ms }}ms{% else %}—{% endif %}</td>
+          <td>{% if e.peak_current_ma %}{{ e.peak_current_ma }}{% else %}—{% endif %}</td>
+          <td>{% if e.stall_detected %}<span class="tag tag-stall">yes</span>{% else %}—{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="no-events">No events logged yet.</p>
+  {% endif %}
+</div>
+
+</body>
+</html>
