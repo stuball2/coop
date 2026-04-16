@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 load_dotenv()
 
-from flask import Flask, request, jsonify, render_template, redirect, url_for, flash
+from flask import Flask, request, jsonify, render_template, redirect, url_for, flash, session
 
 from config import config, LONDON_TZ
 from models import db, DoorEvent, PendingCommand
@@ -40,6 +40,32 @@ def create_app():
         admin = app.config.get("ADMIN_PASSWORD", "")
         return bool(admin) and password == admin
 
+    def login_required(f):
+        @wraps(f)
+        def decorated(*args, **kwargs):
+            if not session.get("logged_in"):
+                return redirect(url_for("login"))
+            return f(*args, **kwargs)
+        return decorated
+
+    # ------------------------------------------------------------------
+    # Login / logout
+    # ------------------------------------------------------------------
+
+    @app.route("/login", methods=["GET", "POST"])
+    def login():
+        if request.method == "POST":
+            if check_admin_password(request.form.get("password", "")):
+                session["logged_in"] = True
+                return redirect(url_for("dashboard"))
+            flash("Wrong password.")
+        return render_template("login.html")
+
+    @app.route("/logout")
+    def logout():
+        session.clear()
+        return redirect(url_for("login"))
+
     # ------------------------------------------------------------------
     # Template helpers
     # ------------------------------------------------------------------
@@ -66,6 +92,7 @@ def create_app():
     # ------------------------------------------------------------------
 
     @app.route("/")
+    @login_required
     def dashboard():
         open_at, close_at = get_schedule()
         events = DoorEvent.query.order_by(DoorEvent.timestamp.desc()).limit(20).all()
