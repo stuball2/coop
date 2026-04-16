@@ -208,8 +208,7 @@ def create_app():
             authed = (api_key == app.config.get("API_KEY", "")) or check_admin_password(admin_pw)
         else:
             action = request.form.get("action")
-            admin_pw = request.form.get("admin_password", "")
-            authed = check_admin_password(admin_pw)
+            authed = session.get("logged_in", False)
 
         if not authed:
             if request.is_json:
