@@ -52,6 +52,13 @@ def create_app():
     # Login / logout
     # ------------------------------------------------------------------
 
+    @app.before_request
+    def redirect_to_www():
+        host = request.host.split(":")[0]
+        if host == "www.broadmoorcoop.co.uk":
+            url = request.url.replace("://www.broadmoorcoop.co.uk", "://broadmoorcoop.co.uk", 1)
+            return redirect(url, 301)
+
     @app.route("/login", methods=["GET", "POST"])
     def login():
         if request.method == "POST":
