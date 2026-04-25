@@ -26,6 +26,28 @@ class DoorEvent(db.Model):
         return f"<DoorEvent {self.id} {self.action} @ {self.timestamp}>"
 
 
+class DeviceStatus(db.Model):
+    __tablename__ = "device_status"
+
+    id = db.Column(db.Integer, primary_key=True)
+    last_poll_at = db.Column(db.DateTime(timezone=True))
+
+    @classmethod
+    def record_poll(cls):
+        row = db.session.get(cls, 1)
+        if row is None:
+            row = cls(id=1, last_poll_at=datetime.now(timezone.utc))
+            db.session.add(row)
+        else:
+            row.last_poll_at = datetime.now(timezone.utc)
+        db.session.commit()
+
+    @classmethod
+    def get_last_poll(cls):
+        row = db.session.get(cls, 1)
+        return row.last_poll_at if row else None
+
+
 class PendingCommand(db.Model):
     __tablename__ = "pending_commands"
 

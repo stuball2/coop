@@ -162,7 +162,7 @@
   <h2>Live camera</h2>
   <div class="camera-wrap">
     <iframe
-      src="https://www.youtube.com/embed/live_stream?channel=UCC-43y0FaaxAP4IDmfrSPIQ&autoplay=1&mute=1"
+      src="https://www.youtube.com/embed/f9TLDTZnK3E?autoplay=1&mute=1"
       allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
       allowfullscreen>
     </iframe>
@@ -181,7 +181,9 @@
     </div>
   {% endif %}
 
-  {% if last_event %}
+  {% if last_poll %}
+    <p class="meta">Last poll: {{ last_poll | local_dt }}{% if last_event %} &nbsp;·&nbsp; Last telemetry: {{ last_event.timestamp | local_dt }}{% endif %}</p>
+  {% elif last_event %}
     <p class="meta">Last telemetry: {{ last_event.timestamp | local_dt }}</p>
   {% else %}
     <p class="meta">No telemetry received yet.</p>

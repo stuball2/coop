@@ -9,7 +9,7 @@ load_dotenv()
 from flask import Flask, request, jsonify, render_template, redirect, url_for, flash, session
 
 from config import config, LONDON_TZ
-from models import db, DoorEvent, PendingCommand
+from models import db, DoorEvent, PendingCommand, DeviceStatus
 from notify import send_telegram
 from sun_schedule import get_schedule
 
@@ -122,6 +122,7 @@ def create_app():
             events=events,
             pending=pending,
             last_event=last_event,
+            last_poll=DeviceStatus.get_last_poll(),
             now=now_local,
         )
 
@@ -132,6 +133,7 @@ def create_app():
     @app.route("/api/schedule")
     @require_api_key
     def api_schedule():
+        DeviceStatus.record_poll()
         open_at, close_at = get_schedule()
 
         pending = PendingCommand.query.first()
