@@ -22,6 +22,12 @@ def create_app():
 
     with app.app_context():
         db.create_all()
+        # Add columns introduced after initial deploy
+        with db.engine.connect() as conn:
+            conn.execute(db.text(
+                "ALTER TABLE pending_commands ADD COLUMN IF NOT EXISTS duration_ms INTEGER"
+            ))
+            conn.commit()
 
     # ------------------------------------------------------------------
     # Auth helpers
