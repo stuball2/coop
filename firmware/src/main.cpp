@@ -16,16 +16,56 @@
 #include <ArduinoJson.h>
 #include <Wire.h>
 #include <RTClib.h>
-#include <Dusk2Dawn.h>
+#include <math.h>
 
 #include "config.h"
+
+// Returns minutes from UTC midnight for sunrise (isSunrise=true) or sunset.
+// Algorithm: US Naval Observatory / Ed Williams' aviation formulary.
+static int sunEventMinUtc(int year, int month, int day, float lat, float lon, bool isSunrise) {
+    float N1 = floorf(275.0f * month / 9.0f);
+    float N2 = floorf((month + 9.0f) / 12.0f);
+    float N3 = 1.0f + floorf((year - 4.0f * floorf(year / 4.0f) + 2.0f) / 3.0f);
+    float N  = N1 - N2 * N3 + day - 30.0f;
+
+    float lngHour = lon / 15.0f;
+    float t = isSunrise ? N + (6.0f  - lngHour) / 24.0f
+                        : N + (18.0f - lngHour) / 24.0f;
+
+    float M = 0.9856f * t - 3.289f;
+
+    float L = M + 1.916f * sinf(M * DEG_TO_RAD) + 0.020f * sinf(2.0f * M * DEG_TO_RAD) + 282.634f;
+    while (L <   0.0f) L += 360.0f;
+    while (L >= 360.0f) L -= 360.0f;
+
+    float RA = atanf(0.91764f * tanf(L * DEG_TO_RAD)) * RAD_TO_DEG;
+    while (RA <   0.0f) RA += 360.0f;
+    while (RA >= 360.0f) RA -= 360.0f;
+    RA += floorf(L / 90.0f) * 90.0f - floorf(RA / 90.0f) * 90.0f;
+    RA /= 15.0f;
+
+    float sinDec = 0.39782f * sinf(L * DEG_TO_RAD);
+    float cosDec = cosf(asinf(sinDec));
+    float cosH   = (cosf(90.833f * DEG_TO_RAD) - sinDec * sinf(lat * DEG_TO_RAD))
+                   / (cosDec * cosf(lat * DEG_TO_RAD));
+    if (cosH > 1.0f || cosH < -1.0f) return -1;
+
+    float H = isSunrise ? 360.0f - acosf(cosH) * RAD_TO_DEG : acosf(cosH) * RAD_TO_DEG;
+    H /= 15.0f;
+
+    float UT = H + RA - 0.06571f * t - 6.622f - lngHour;
+    while (UT <   0.0f) UT += 24.0f;
+    while (UT >= 24.0f) UT -= 24.0f;
+    return (int)(UT * 60.0f);
+}
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
 struct Schedule {
     time_t openTs  = 0;
     time_t closeTs = 0;
-    String pendingCommand;   // "open", "close", or ""
+    String pendingCommand;      // "open", "close", or ""
+    int    pendingDurationMs = 0; // 0 = full travel
     bool   valid   = false;
 };
 
@@ -50,8 +90,6 @@ bool              ntpSynced            = false;
 int lastOpenDay  = -1;
 int lastCloseDay = -1;
 
-Dusk2Dawn crowthorne(LATITUDE, LONGITUDE, 0.0f);  // returns UTC minutes
-
 // ─── Forward declarations ──────────────────────────────────────────────────────
 
 void     connectWiFi();
@@ -61,8 +99,8 @@ bool     isBST(int year, int month, int day);
 void     calcLocalSchedule(time_t now, time_t &openTs, time_t &closeTs);
 bool     fetchSchedule(Schedule &out);
 int      readCurrentMa();
-RunResult runMotor(bool openDir);
-void     executeAction(const char *action, const char *trigger);
+RunResult runMotor(bool openDir, unsigned long maxDurationMs = MAX_RUN_DURATION_MS);
+void     executeAction(const char *action, const char *trigger, unsigned long durationMs = MAX_RUN_DURATION_MS);
 void     sendTelemetry(const char *action, const char *trigger, RunResult r);
 void     motorStop();
 
@@ -157,14 +195,8 @@ void calcLocalSchedule(time_t now, time_t &openTs, time_t &closeTs) {
     int month = t->tm_mon + 1;
     int day   = t->tm_mday;
 
-    // Dusk2Dawn with timezone=0 returns UTC minutes from midnight (no DST flag)
-    int sunriseMinUtc = crowthorne.sunrise(year, month, day, false);
-    int sunsetMinUtc  = crowthorne.sunset(year, month, day, false);
-
-    // BST offset: Dusk2Dawn doesn't handle DST, so subtract 1h from result
-    // to stay in UTC when we're in BST
-    // (Dusk2Dawn gives solar times in UTC; adding BST offset to get local
-    // would give the wrong UTC. We want UTC, so no adjustment needed here.)
+    int sunriseMinUtc = sunEventMinUtc(year, month, day, LATITUDE, LONGITUDE, true);
+    int sunsetMinUtc  = sunEventMinUtc(year, month, day, LATITUDE, LONGITUDE, false);
 
     time_t midnightUtc = (now / 86400L) * 86400L;
     openTs  = midnightUtc + (time_t)sunriseMinUtc * 60;
@@ -178,20 +210,24 @@ void calcLocalSchedule(time_t now, time_t &openTs, time_t &closeTs) {
 bool fetchSchedule(Schedule &out) {
     if (WiFi.status() != WL_CONNECTED) return false;
 
+    int code = -1;
+    HTTPClient http;
     WiFiClientSecure client;
-    // Skips certificate verification — acceptable for a personal home project.
-    // For stricter security, supply the Railway root CA certificate instead.
     client.setInsecure();
 
-    HTTPClient http;
     String url = String(RAILWAY_BASE_URL) + "/api/schedule";
-    http.begin(client, url);
-    http.addHeader("X-API-Key", API_KEY);
-    http.setTimeout(8000);
-
-    int code = http.GET();
+    for (int attempt = 1; attempt <= 3 && code != 200; attempt++) {
+        http.end();
+        http.begin(client, url);
+        http.addHeader("X-API-Key", API_KEY);
+        http.setTimeout(10000);
+        code = http.GET();
+        if (code != 200) {
+            Serial.printf("Schedule fetch attempt %d failed: HTTP %d\n", attempt, code);
+            delay(2000);
+        }
+    }
     if (code != 200) {
-        Serial.printf("Schedule fetch failed: HTTP %d\n", code);
         http.end();
         return false;
     }
@@ -208,7 +244,8 @@ bool fetchSchedule(Schedule &out) {
     out.openTs  = doc["open_ts"].as<long>();
     out.closeTs = doc["close_ts"].as<long>();
     const char *pending = doc["pending_command"] | "";
-    out.pendingCommand  = String(pending ? pending : "");
+    out.pendingCommand   = String(pending ? pending : "");
+    out.pendingDurationMs = doc["pending_duration_ms"] | 0;
     out.valid = true;
 
     Serial.printf("Schedule: open=%ld close=%ld pending=%s\n",
@@ -226,7 +263,9 @@ int readCurrentMa() {
         delayMicroseconds(200);
     }
     int adcValue = (int)(sum / 10);
-    int rawMa    = (int)((adcValue - ACS712_ZERO_ADC) * 1000.0f / ACS712_COUNTS_PER_A);
+    // If pin is floating (no ACS712), ADC reads near 0 or 4095 — clamp to 0
+    if (adcValue < 100 || adcValue > 3900) return 0;
+    int rawMa = (int)((adcValue - ACS712_ZERO_ADC) * 1000.0f / ACS712_COUNTS_PER_A);
     return abs(rawMa);
 }
 
@@ -241,7 +280,7 @@ void motorStop() {
 // Runs the motor in the given direction until:
 //   (a) stall detected — current spikes above STALL_THRESHOLD_MA for STALL_CONFIRM_MS
 //   (b) MAX_RUN_DURATION_MS elapses (hard safety timeout)
-RunResult runMotor(bool openDir) {
+RunResult runMotor(bool openDir, unsigned long maxDurationMs) {
     RunResult result;
 
     digitalWrite(MOTOR_IN1, openDir ? HIGH : LOW);
@@ -252,7 +291,7 @@ RunResult runMotor(bool openDir) {
     unsigned long stallStartMs = 0;
     bool          inStall      = false;
 
-    while (millis() - startMs < MAX_RUN_DURATION_MS) {
+    while (millis() - startMs < maxDurationMs) {
         delay(CURRENT_SAMPLE_MS);
 
         int currentMa = readCurrentMa();
@@ -314,7 +353,7 @@ void sendTelemetry(const char *action, const char *trigger, RunResult r) {
     http.begin(client, url);
     http.addHeader("Content-Type", "application/json");
     http.addHeader("X-API-Key", API_KEY);
-    http.setTimeout(8000);
+    http.setTimeout(10000);
 
     int code = http.POST(body);
     Serial.printf("Telemetry: HTTP %d\n", code);
@@ -323,19 +362,21 @@ void sendTelemetry(const char *action, const char *trigger, RunResult r) {
 
 // ─── Action execution ──────────────────────────────────────────────────────────
 
-void executeAction(const char *action, const char *trigger) {
+void executeAction(const char *action, const char *trigger, unsigned long durationMs) {
     bool openDir = (strcmp(action, "open") == 0);
-    Serial.printf("Executing: %s (%s)\n", action, trigger);
+    Serial.printf("Executing: %s (%s) for %lums\n", action, trigger, durationMs);
 
-    RunResult r = runMotor(openDir);
+    RunResult r = runMotor(openDir, durationMs);
     sendTelemetry(action, trigger, r);
 
-    // Update same-day deduplication tracking
-    time_t now = getCurrentEpoch();
-    if (now > 0) {
-        struct tm *t = gmtime(&now);
-        if (openDir) lastOpenDay  = t->tm_mday;
-        else         lastCloseDay = t->tm_mday;
+    // Only deduplicate scheduled full-travel actions
+    if (strcmp(trigger, "schedule") == 0) {
+        time_t now = getCurrentEpoch();
+        if (now > 0) {
+            struct tm *t = gmtime(&now);
+            if (openDir) lastOpenDay  = t->tm_mday;
+            else         lastCloseDay = t->tm_mday;
+        }
     }
 }
 
@@ -438,10 +479,12 @@ void loop() {
 
         // Pending manual command takes priority over schedule
         if (sched.pendingCommand == "open") {
-            executeAction("open", "manual");
+            unsigned long dur = sched.pendingDurationMs > 0 ? sched.pendingDurationMs : MAX_RUN_DURATION_MS;
+            executeAction("open", "manual", dur);
             sched.pendingCommand = "";
         } else if (sched.pendingCommand == "close") {
-            executeAction("close", "manual");
+            unsigned long dur = sched.pendingDurationMs > 0 ? sched.pendingDurationMs : MAX_RUN_DURATION_MS;
+            executeAction("close", "manual", dur);
             sched.pendingCommand = "";
         } else {
             // Check scheduled open/close windows

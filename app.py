@@ -150,11 +150,11 @@ def create_app():
             "sunset": close_at.isoformat(),
             "open_at": open_at.isoformat(),
             "close_at": close_at.isoformat(),
-            # Unix epoch seconds (UTC) — easier for ESP32 to compare against time()
             "open_ts": int(open_at.timestamp()),
             "close_ts": int(close_at.timestamp()),
             "server_time": datetime.now(LONDON_TZ).isoformat(),
             "pending_command": pending.action if pending else None,
+            "pending_duration_ms": pending.duration_ms if pending else None,
             "door_state": door_state,
         })
 
@@ -231,10 +231,19 @@ def create_app():
             flash("Invalid action.")
             return redirect(url_for("dashboard"))
 
+        duration_ms = None
+        if request.is_json:
+            duration_ms = data.get("duration_ms")
+        else:
+            raw = request.form.get("duration_ms")
+            if raw:
+                duration_ms = int(raw)
+
         # One pending command at a time
         PendingCommand.query.delete()
         pending = PendingCommand(
             action=action,
+            duration_ms=duration_ms,
             expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
         )
         db.session.add(pending)

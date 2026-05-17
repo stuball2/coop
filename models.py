@@ -53,6 +53,7 @@ class PendingCommand(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     action = db.Column(db.String(10), nullable=False)   # open, close
+    duration_ms = db.Column(db.Integer, nullable=True)  # None = full travel
     issued_at = db.Column(
         db.DateTime(timezone=True),
         nullable=False,

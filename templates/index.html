@@ -60,25 +60,21 @@
     .schedule-item .time { font-size: 1.5rem; font-weight: 300; }
 
     /* Override form */
-    .override-form { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: flex-end; }
-    .override-form input[type="password"] {
-      flex: 1;
-      min-width: 160px;
-      padding: 0.5rem 0.75rem;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-      font-size: 0.9rem;
-    }
+    .override-grid { display: grid; grid-template-columns: auto 1fr; gap: 0.4rem 0.5rem; align-items: center; }
+    .override-label { font-size: 0.75rem; color: #888; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap; }
+    .btn-row { display: flex; gap: 0.4rem; flex-wrap: wrap; }
     .btn {
-      padding: 0.5rem 1.25rem;
+      padding: 0.4rem 0.75rem;
       border: none;
       border-radius: 4px;
-      font-size: 0.9rem;
+      font-size: 0.82rem;
       font-weight: 600;
       cursor: pointer;
     }
     .btn-open  { background: #198754; color: #fff; }
     .btn-close { background: #6c757d; color: #fff; }
+    .btn-open-partial  { background: #d4edda; color: #155724; }
+    .btn-close-partial { background: #e2e3e5; color: #383d41; }
     .btn:hover { filter: brightness(0.9); }
 
     /* Flashed messages */
@@ -208,10 +204,45 @@
 <!-- Manual override -->
 <div class="card">
   <h2>Manual override</h2>
-  <form class="override-form" method="post" action="/api/command">
-    <button class="btn btn-open"  type="submit" name="action" value="open">Open</button>
-    <button class="btn btn-close" type="submit" name="action" value="close">Close</button>
-  </form>
+  <div class="override-grid">
+    <span class="override-label">Open</span>
+    <div class="btn-row">
+      <form method="post" action="/api/command">
+        <input type="hidden" name="duration_ms" value="2500">
+        <button class="btn btn-open-partial" type="submit" name="action" value="open">¼</button>
+      </form>
+      <form method="post" action="/api/command">
+        <input type="hidden" name="duration_ms" value="5000">
+        <button class="btn btn-open-partial" type="submit" name="action" value="open">½</button>
+      </form>
+      <form method="post" action="/api/command">
+        <input type="hidden" name="duration_ms" value="7500">
+        <button class="btn btn-open-partial" type="submit" name="action" value="open">¾</button>
+      </form>
+      <form method="post" action="/api/command">
+        <button class="btn btn-open" type="submit" name="action" value="open">Full</button>
+      </form>
+    </div>
+
+    <span class="override-label">Close</span>
+    <div class="btn-row">
+      <form method="post" action="/api/command">
+        <input type="hidden" name="duration_ms" value="2500">
+        <button class="btn btn-close-partial" type="submit" name="action" value="close">¼</button>
+      </form>
+      <form method="post" action="/api/command">
+        <input type="hidden" name="duration_ms" value="5000">
+        <button class="btn btn-close-partial" type="submit" name="action" value="close">½</button>
+      </form>
+      <form method="post" action="/api/command">
+        <input type="hidden" name="duration_ms" value="7500">
+        <button class="btn btn-close-partial" type="submit" name="action" value="close">¾</button>
+      </form>
+      <form method="post" action="/api/command">
+        <button class="btn btn-close" type="submit" name="action" value="close">Full</button>
+      </form>
+    </div>
+  </div>
 </div>
 
 <!-- Event log -->

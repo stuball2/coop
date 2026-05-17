@@ -1,6 +1,6 @@
 from astral import LocationInfo
 from astral.sun import sun
-from datetime import date
+from datetime import date, timedelta
 from typing import Optional
 
 CROWTHORNE = LocationInfo(
@@ -23,4 +23,4 @@ def get_schedule(for_date: Optional[date] = None) -> tuple:
     if for_date is None:
         for_date = date.today()
     s = sun(CROWTHORNE.observer, date=for_date, tzinfo=CROWTHORNE.timezone)
-    return s["sunrise"], s["sunset"]
+    return s["sunrise"], s["sunset"] + timedelta(minutes=30)
